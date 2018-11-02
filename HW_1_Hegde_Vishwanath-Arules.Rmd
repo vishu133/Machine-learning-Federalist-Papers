@@ -1,0 +1,158 @@
+---
+title: "HW_1_Hegde_Vishwanath - Arules"
+author: "Vishwanath Hegde"
+date: "September 22, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+app link: https://vishu133.shinyapps.io/HW_1_Arules/
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HW 1 Association Rule Implementation
+
+Below Function EnsurePackage is used to installs and load packages.The dataset "AdultUCI" was loaded
+
+```{r package,results="hide",message=FALSE}
+EnsurePackage <- function(x) {
+  x <- as.character(x)
+  if( !require(x,character.only = T))
+      {install.packages(x,repos = "https://cran.r-project.org/")
+        require(x,character.only = T)}
+}
+
+EnsurePackage("arules")
+EnsurePackage("arulesViz")
+EnsurePackage("shiny")
+EnsurePackage("caret")
+EnsurePackage("colorspace")
+data("AdultUCI")
+```
+
+## Method
+
+The data analysis was done using CRISP-DM process. Below is a step-by-step functioning of that process.
+
+### 1.Data Exploration and Descriptive Statistics
+Common data exploration techniques like structure, summary were applied and presence of N/A values were evaluated. N/A values are present in attributes income, country, occupation and workclass. 
+```{r exploration, results="hide"}
+str(AdultUCI)
+summary(AdultUCI)
+```
+
+Some Histograms were generated for numerical values
+```{r Histogram}
+par(mfrow = c(3,2)) #3 rows 2 columns
+for (i in 1:length(colnames(AdultUCI))) #Generate histogram of for integer values
+{if (is.factor(AdultUCI[,i]) == F)
+  {hist(AdultUCI[,i],main = colnames(AdultUCI[i]),las = 2)}}
+```
+
+Some Barplots were generated for factor values
+```{r barplot}
+par(mfrow = c(3,3))
+for (i in 1:length(colnames(AdultUCI))) #Generate barplot of for factor values
+{if (is.factor(AdultUCI[,i]) == T)
+{barplot(table(AdultUCI[,i]),main = colnames(AdultUCI[i]),las = 2)}}
+```
+Some of the observation gained after descriptive analysis is that the dataset contains mostly data from USA and the majority race is white.In terms of work lots of private companies and people normally work 40 hours in a week.
+
+### 2.Data Pre-processing
+For Association rules, convert numerical values into category by using the function discretize to convert numerical values present in age, hours-per-week, capital-gain and capital-loss to categorical values.
+```{r data preprocessing}
+#Data Preprocessing: For ARules by converting integers to categories
+
+AdultUCI$age_grp <- discretize(AdultUCI$age, method = "cluster",
+                               labels = c("Young","Middle Aged","Senior"),
+                               order = T,onlycuts = F)
+AdultUCI$hours_per_week_grp <- discretize(AdultUCI$`hours-per-week`,method = "fixed",
+                                          categories = c(-Inf,25,41,60,Inf),
+                                        labels = c("Part-time","Full-time",
+                                                   "Over-time","Burn-out 60"),
+                              order = T)
+AdultUCI$capital_gain_grp <- discretize(AdultUCI$`capital-gain`,method = "fixed",
+                                        categories = c(-Inf,0,1,10000,99998,Inf),
+                                        labels = c("None","Low",
+                                                   "High","Super High"),
+                                        order = T)
+AdultUCI$capital_loss_grp <- discretize(AdultUCI$`capital-loss`,method = "fixed",
+                                        categories = c(-Inf,0,1,1000,2000,Inf),
+                                        labels = c("None","Low","Med",
+                                                   "High"),
+                                        order = T)
+```
+
+
+### 3.Apply Arules in Default Setting
+The default setting of arules has the support of 0.1, confidence of 0.8 and 
+maximum of 10 items. 
+```{r arulesdefault,results = "hide"}
+rules_record <- apriori(AdultUCI[,sapply(AdultUCI, is.factor)])
+
+```
+Function inspect is used to check the first 10 rules.
+```{r arulesdefaultinspect}
+inspect(head(rules_record,n=10))
+```
+
+### 4.Fine Tuning the Model
+Fine tuning of model is done by experimenting with different values of support,confidence, lift and minimum items.
+```{r finetune1,results="hide"}
+rules_record1 <- apriori(AdultUCI[,sapply(AdultUCI, is.factor)],
+                        parameter = list(support = 0.2, 
+                                         confidence = 0.8,
+                                         minlen = 3))
+```
+
+```{r arulesinspect1}
+inspect(head(rules_record1,n=10))
+```
+
+```{r finetune2,results="hide",warning=FALSE}
+rules_record2 <- apriori(AdultUCI[,sapply(AdultUCI, is.factor)],
+                         parameter = list(sup = 0.1, 
+                                          conf = 0.8,minlen = 1
+                                          ))
+```
+```{r arulesinspect2}
+inspect(head(rules_record2,n=10))
+```
+
+### 5.Predicting Income
+The knowledge gained after fine tuning can be used to identify rules that relate to either high or low income. Predicting low income is done first followed by high income.
+```{r predictlow, results="hide",warning=FALSE}
+AdultUCI_factor <- AdultUCI[,sapply(AdultUCI, is.factor)]
+rules_lowincome <- apriori(data = AdultUCI_factor, 
+                           parameter = list(sup = 0.01,conf = 0.5,minlen=3),
+                        appearance = list(default = "lhs", 
+                                          rhs = c("income=small")),
+                        control = list(verbose = T))
+```
+
+**View rules for low-income**
+```{r inspectlow}
+inspect(sort(rules_lowincome, by = "lift",decreasing = T)[1:10])
+```
+
+**Predicting high income**
+```{r predicthigh, results="hide",warning=FALSE}
+#predict rules behind large income
+rules_highincome <- apriori(data = AdultUCI_factor, 
+                           parameter = list(sup = 0.01,conf = 0.5,minlen=3),
+                           appearance = list(default = "lhs", 
+                                             rhs = c("income=large")),
+                           control = list(verbose = T))
+```
+
+**View rules for high-income**
+```{r inspecthigh}
+inspect(sort(rules_highincome, by = "lift",decreasing = T)[1:10])
+```
+
+
+### 6. Conclusion
+
+*It is observed that individuals having low income usually are young, male, unmarried and have a part-time job, while individuals having high income are white, married, have high capital gain and low capital loss. Individuals who are bachelors or occupy an exec-managerial position also in most cases end up with high incomes*
