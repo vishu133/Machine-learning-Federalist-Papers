@@ -1,5 +1,4 @@
 ---
-title: "HW_1_Hegde_Vishwanath - Arules"
 author: "Vishwanath Hegde"
 date: "September 22, 2018"
 output:
@@ -12,7 +11,7 @@ app link: https://vishu133.shinyapps.io/HW_1_Arules/
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## HW 1 Association Rule Implementation
+## Association Rule Implementation
 
 Below Function EnsurePackage is used to installs and load packages.The dataset "AdultUCI" was loaded
 
