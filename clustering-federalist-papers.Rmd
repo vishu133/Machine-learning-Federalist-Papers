@@ -1,0 +1,148 @@
+---
+Topic: "Finding Authorship Through Clustering"
+Author: 'Vishwa'
+date: "February 11, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction - Clustering to find Mystery in History
+The Federalist Papers were a series of 85 essays in which Hamilton authored 51, Madison authored 15, Hamilton
+and Madison co-authored 3, Jay authored 5 and then there were 11 unidentified that both Hamilton (before his
+death) and Madison claimed authorship.
+
+The purpose of this assignment is to use cluster analysis to find out who was the author behind the disputed essays, Madison or Hamilton?
+
+### Loading Libraries
+```{r loaddata, message=FALSE,warning=FALSE}
+#Load all nessessary libraries
+# The following function will check if the package is in your library, 
+# if not then it will install the package from the repository and then load it
+
+EnsurePackage <- function(x) {
+  x <- as.character(x)
+  if (!require(x,character.only = T))
+    install.packages(x,repos = "https://cran.cnr.berkeley.edu/")
+  require(x,character.only = T)
+  
+}
+
+EnsurePackage("ggplot2") # Create graphics and charts
+EnsurePackage("tidyverse") #Data wrangling
+EnsurePackage("factoextra") #extract and visualize the output of exploratory multivariate data analyses
+EnsurePackage("purrr") #Create elbow method to find optimal clusters
+```
+
+
+### Loading File
+The fedpapers85.csv file contains a list of essays with author names and scaled frequency of function words. I have loaded the csv file with rownames as null because I want to replace the number with text that will help me identify essays better when we visualize the cluster
+
+```{r csv, echo=FALSE}
+path <- file.choose()
+#Load Data
+fed_papers <- read.csv(path,stringsAsFactors = F,row.names = NULL)
+```
+
+After looking into the dataset we observe that there are 3 Authors Hamilton, Madison and Jay. Some of the essays have been marked as co-written and disputed. Lets visualize the dataset to learn more about it.
+
+```{r dataexplore, echo=FALSE}
+#Visualizing data by creating a scatterplot that plots frequency of each word by author
+
+plot_data <- fed_papers %>%
+  gather(key = "function_words",value = "freq", c(-1,-2)) %>%
+  arrange(desc(author))
+
+ggplot(data = plot_data, aes(x=freq,y=function_words,col=author))+
+  geom_point() +theme(axis.text=element_text(size=8))
+```
+</br>From the graph,we quickly observe that Jay's essays are very distinctive.
+Disputed essays have a lot of overlap with Hamilton's and madison's essay, making it difficult to interpret.Clustering would help us identify where the disputed essays fall.
+
+Since clustering techniques only work on numerical values we will have to get rid of strings in the data. 
+```{r cleaning, echo=FALSE}
+#For Visualization purpose - creating an abbreviation of author name and 
+#the number of the paper. The below code takes the first 2 and last 2 letters of filename creates a new column authorabb
+fed_papers$authorabb <- paste(substr(fed_papers$filename, 1,2),                        substr(fed_papers$filename,nchar(fed_papers$filename)-5,
+                                     nchar(fed_papers$filename)-3))
+
+fed_papers_num<- data.matrix(fed_papers[-c(1,2,73)])
+
+#This will paste the author abb on the empty rows
+row.names(fed_papers_num)<-fed_papers$authorabb
+```
+
+###K means - Creating elbow plot to find recommended clusters
+```{r elbow, echo=FALSE}
+set.seed(8)
+wss <- function(k){
+  return(kmeans(fed_papers_num, k, nstart = 25)$tot.withinss)
+}
+
+k_values <- 1:15
+
+wss_values <- map_dbl(k_values, wss)
+
+plot(x = k_values, y = wss_values, 
+     type = "b", frame = F,
+     xlab = "Number of clusters K",
+     ylab = "Total within-clusters sum of square")
+```
+</br>According to the plot, the optimum number of clusters are 4 or 5. As there are 4 authorship attributes. We will go with k=4
+
+### K means - Clustering
+```{r}
+set.seed(8)
+km_output <- kmeans(fed_papers_num,centers=5,nstart = 25,iter.max = 100,
+                    algorithm = "Hartigan-Wong")
+str(km_output)
+#Visualizing cluster
+fviz_cluster(km_output,data = fed_papers_num)
+```
+</br>From the visualization we can see that the essays authored by Jay have their own clusters, rest all clusters are overlapping. Let create a table to find which essay belongs to which cluster
+
+```{r table, message=FALSE}
+#Creating a author-cluster table to know which paper belongs to which cluster
+table(km_output$cluster,fed_papers$author)
+km_output$cluster
+```
+Based on the table, most of the essays of hamilton fall in cluster 4 and 5, while 9 disputed essays fall in cluster 2 and 3, which also contain essays written by Madison.Disputed essay 55 and 62 fall in hamilton's cluster.All the joint essays fall in cluster 1, which has a mix of all the author essays except for Jay's.
+
+### Analyzing Attribute Importance
+To find out which attributes contributed the most we will use coefficient of variance to measure the spread of each attribute on the clusters. The more the variance the greater the spread and the more important the feature is in distinguishing between the authors.
+```{r attributes, message=FALSE}
+#Analyzing which attributes are most useful
+km_output$centers
+km_df <- as.data.frame(km_output$centers) #converting matrix to dataframe
+
+#Calculating the coefficient of variance
+100*apply(km_df,2,sd)/colMeans(km_df)
+```
+Based on the calculated variance, we see that the word "upon" has the most importance in terms of variance.
+
+### Clustering using HAC method
+```{r, message =FALSE}
+#Measure eucleadian distance between each point
+set.seed(8)
+d <- dist(as.matrix(fed_papers_num)) 
+hac_output <- hclust(d, method = "complete")
+#Plot the dendogram
+plot(hac_output)
+#Based on the plot having 10 cuts would get us a better idea 
+hac_cut <- cutree(hac_output,10)
+table(hac_cut,fed_papers$author)
+```
+
+### Visualizing HAC using Factoextra library function
+```{r}
+#HAC use desirable clusters after modelling
+hac_output <- hcut(fed_papers_num, k = 5, stand = TRUE)
+fviz_dend(hac_output,cex = 0.4 )
+```
+</br>The factoextra visualization gives us a visually appealing visualization. The results of HAC also indicate that disputed papers have been written by Madison.
+
+### Conclusion
+The k-means and HAC algorithm showed that the disputed papers have more in common with Madison than Hamilton. The word "upon" had the most weight in determining which essay belongs to which cluster. On inspecting the dataset we can see that hamilton frequently used "upon", while madison did not. The disputed essays too have low frequency of "upon". Based on our analysis, we come to the conclusion that Madison is the author of all the disputed essays.
+

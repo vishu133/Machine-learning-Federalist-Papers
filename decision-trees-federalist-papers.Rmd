@@ -1,0 +1,148 @@
+---
+title: "Decision Trees"
+author: "Vishwa"
+date: "February 15, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The purpose of this assignment is to use decision tree algorithm to find out who wrote the disputed essays, Hamilton or Madison? Below Function EnsurePackage is used to install and load 
+packages.
+
+###Loading Packages
+```{r load,message=FALSE}
+EnsurePackage <- function(x) {
+  x <- as.character(x)
+  if (!require(x,character.only = T))
+    install.packages(x,repos = "https://cran.cnr.berkeley.edu/")
+  require(x,character.only = T)
+  
+}
+
+EnsurePackage("caret") # set of functions that attempt to streamline the process for creating predictive models
+EnsurePackage("rpart") #Recursive Partitioning And Regression Trees
+EnsurePackage("rattle") #graphical user interface to many other R packages that provide functionality for data mining
+```
+
+### Loading Data & Preprocessing
+
+```{r preprocess, message=FALSE}
+path <- file.choose()
+FP <- read.csv(path)
+
+#Pre processing
+#Removing filename column
+FP.set1 <- subset(FP,select=-c(filename))
+FP.set1$author <- factor(FP.set1$author)
+set.seed(8)
+
+#Creating training and testing set splitting it into 80% train and 20% test
+split.sample <- sample(1:2, size=nrow(FP.set1),prob=c(0.8,0.2),replace = T)
+FP1.train <- FP.set1[split.sample == 1,]
+FP1.test <- FP.set1[split.sample == 2,]
+```
+
+### Applying Decision Tree Rpart
+We will first apply the default train function on the training dataset
+```{r rpart,message=FALSE}
+#Use default
+#The parameters that default uses are
+#modeltype:classification, metric:accuracy, tunelength=3, sampling:bootstrapping method
+
+set.seed(8)
+dt_model1 <- train(author ~.,data=FP1.train,method="rpart")
+
+#Check results
+dt_model1$results
+
+fancyRpartPlot(dt_model1$finalModel)
+
+```
+</br> From the plot we can see that the tree splits into two on "upon" condition. If we recall solution 4 of clustering, we had come to conclusion that the word 'upon' is the most important feature in the dataset. Now we will apply this model on the testing set to check accuracy.
+```{r testmodeld, message=FALSE}
+dt_pred <- predict(dt_model1,newdata = FP1.test)
+confusionMatrix(dt_pred,FP1.test$author)
+```
+</br> The model gives us an accuracy of 80%. We will try various tuning and sampling parameters to get a better model.
+
+###Applying k-fold cross validation
+Instead of the default bootstrapping method, we will create a model using 10-fold cross validation. This ensures a better data distribution and creates a robust model.
+```{r}
+#Better sampling using trainControl cross validated
+set.seed(8)
+fitControl <- trainControl(method='cv',number=10)
+
+dt_model2 <- train(author ~.,data=FP1.train,method="rpart", 
+                   trControl=fitControl)
+dt_model2
+fancyRpartPlot(dt_model2$finalModel)
+dt_pred2 <- predict(dt_model2,newdata = FP1.test)
+confusionMatrix(dt_pred2,FP1.test$author)
+
+```
+</br> Our accuracy improved to 85%. We will be using k-fold in future models.
+
+###Applying Tuning parameters
+The rpart function is tuned using the complexity parameter c. You can either manually enter the parameter using the gridsearch or you can set it automatically using tuneLength. We will be setting it automatically.
+
+```{r tuning, message =FALSE}
+#Parameter tuning Increase tune length 10 and use cross validated
+set.seed(8)
+dt_model3 <- train(author ~.,data=FP1.train,method="rpart",
+                   tuneLength=10,trControl = fitControl)
+dt_model3
+fancyRpartPlot(dt_model3$finalModel)
+dt_pred3 <- predict(dt_model3,newdata = FP1.test)
+confusionMatrix(dt_pred3,FP1.test$author)
+
+
+```
+</br>
+We got the same accuracy of 85% for a different value of cp. Complexity parameter reduces the number of branches there can be. The lower the cp the more branches you will have. Since data is small we would want to have several branches in order to understand what words distinguish authors from each other. So in the next model we will also be including minsplit parameter to get more branches.
+
+```{r minsplit,message=FALSE}
+#Parameter tuning include min split
+set.seed(8)
+dt_model4 <- train(author ~.,data=FP1.train,method="rpart",
+                   control = rpart.control(minsplit = 7),
+                   trControl = trainControl(method = "cv", number = 10))
+
+dt_model4
+fancyRpartPlot(dt_model4$finalModel)
+dt_pred4 <- predict(dt_model4,newdata = FP1.test)
+confusionMatrix(dt_pred4,FP1.test$author)
+
+
+```
+</br> We got same accuracy but this model could also predict jay accurately. We will use this model in our final model to find what the algorithm thinks is the author of the disputed papers.
+
+```{r final, message=FALSE}
+#Applying final model on training the dataset with non disputed categories and 
+#applying predicting to disputed categories
+FP.nondis <- subset(FP,select = -c(filename),author != "dispt")
+FP.nondis$author <- factor(FP.nondis$author)
+FP.dis <- subset(FP,select = -c(filename),author == "dispt")
+FP.dis$author <- factor(FP.dis$author)
+
+#using tuning parameters
+set.seed(8)
+dt_model_final <- train(author ~.,data=FP.nondis,
+                        method="rpart",
+                    control = rpart.control(minsplit = 7),
+                    trControl = trainControl(method = "cv", 
+                                                number = 10))
+dt_model_final
+
+fancyRpartPlot(dt_model_final$finalModel)
+dt_pred_final <- predict(dt_model_final,newdata = FP.dis)
+histogram(dt_pred_final)
+
+```
+</br> The histogram shows that all of the disputed papers belong to madison. The result of decision tree is slightly similar to the result we found in our clustering assignment, where the clustering algorithm assigned most of the disputed papers to Madison.
+
+
